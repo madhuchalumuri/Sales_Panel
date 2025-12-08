@@ -5,6 +5,8 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Building2 } from "lucide-react";
 import { toast } from "react-toastify";
+import { baseURL } from "../config/apiConfig";
+import cryptoService from "../services/cryptoService";
 
 interface LoginPageProps {
   onLogin: () => void;
@@ -13,6 +15,7 @@ interface LoginPageProps {
 export default function LoginPage({ onLogin }: LoginPageProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   // const handleLogin = (e: React.FormEvent) => {
@@ -22,22 +25,24 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   // };
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-
+    if (loading) return;
+    setLoading(true);
     try {
-      const response = await fetch("http://localhost:8080/api/v1/login", {
+      const response = await fetch(`${baseURL}login`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           username: email,
-          password,
+          password: cryptoService.encrypt(password),
         }),
       });
 
       if (response.status === 208) {
         const err = await response.text(); // server returns raw string, not JSON
         toast.error(err || "User not available");
+        setLoading(false);
         return;
       }
       // If API returns non-200 status
@@ -58,6 +63,8 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     } catch (error) {
       console.error("Login Error:", error);
       toast.error("Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -72,9 +79,9 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             </div>
           </div>
 
-          <h1 className="text-center mb-2">Sales Team Panel</h1>
+          <h1 className="text-center mb-2">Clonetab Trial Products Portal</h1>
           <p className="text-center text-gray-500 mb-10">
-            Sign in to manage demos and licenses
+            Sign in to manage Trial Licenses
           </p>
 
           <form onSubmit={handleLogin} className="space-y-6">
@@ -83,7 +90,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
               <Input
                 id="email"
                 type="email"
-                placeholder="your.email@company.com"
+                placeholder="admin@clonetab.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="h-12 rounded-xl border-gray-200 focus:border-[#4B9CD3]"
@@ -106,15 +113,28 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
             <Button
               type="submit"
-              className="w-full h-12 rounded-xl bg-[#1E88E5] hover:bg-[#4B9CD3] text-white mt-8"
+              disabled={loading}
+              className={`w-full h-12 rounded-xl text-white mt-8 
+             ${
+               loading
+                 ? "bg-gray-400 cursor-not-allowed"
+                 : "bg-[#1E88E5] hover:bg-[#4B9CD3]"
+             }`}
             >
-              Login
+              {loading ? (
+                <div className="flex items-center justify-center gap-2">
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Logging in...
+                </div>
+              ) : (
+                "Login"
+              )}
             </Button>
           </form>
 
-          <p className="text-center text-gray-400 text-sm mt-8">
+          {/* <p className="text-center text-gray-400 text-sm mt-8">
             Demo Login: Use any email and password
-          </p>
+          </p> */}
         </div>
       </div>
     </div>
