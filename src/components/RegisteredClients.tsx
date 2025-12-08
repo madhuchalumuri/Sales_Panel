@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+
 import Sidebar from "./Sidebar";
 import TopBar from "./TopBar";
 import { Button } from "./ui/button";
@@ -14,16 +15,24 @@ import {
 } from "./ui/select";
 import { toast } from "react-toastify";
 import { Label } from "./ui/label";
+import { baseURL } from "../config/apiConfig";
+import ShimmerChartSkeleton from "./ui/ShimmerChartSkeleton";
 interface UserDetails {
   username: string;
   fullname: string;
   role: string;
 }
+interface Client {
+  email: string;
+  clientName: string;
+  registeredBy?: string;
+  licenseKey?: string;
+}
 
 export default function RegisteredClients() {
   const [showAddUser, setShowAddUser] = useState(false);
   const navigate = useNavigate();
-  const [clients, setClients] = useState([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   // const [copied, setCopied] = useState(false);
@@ -35,6 +44,9 @@ export default function RegisteredClients() {
   const [expiryDate, setExpiryDate] = useState("");
   const [generatedKey, setGeneratedKey] = useState("");
   const [userDetails, setUserDetails] = useState<UserDetails | null>(null);
+  const [productTypes, setProductTypes] = useState<string[]>([]);
+  const [busyCursor, setBusyCursor] = useState(false);
+  const [productTypeError, setProductTypeError] = useState(false);
 
   const [formData, setFormData] = useState({
     email: "",
@@ -44,7 +56,15 @@ export default function RegisteredClients() {
     productType: "",
     registeredBy: "", // will be updated after localStorage loads
   });
+  const location = useLocation();
+  const [currentPage, setCurrentPage] = useState(1);
 
+  useEffect(() => {
+    if (location.state) {
+      setStatusFilter(location.state.selectedProduct);
+      navigate(location.pathname, { replace: true });
+    }
+  }, []);
   // Load user details from localStorage only once
   useEffect(() => {
     const result = localStorage.getItem("details");
@@ -59,37 +79,68 @@ export default function RegisteredClients() {
       }));
     }
   }, []);
+  useEffect(() => {
+    const fetchProductTypes = async () => {
+      try {
+        const res = await fetch(`${baseURL}product-type/product`, {
+          method: "GET",
+        });
+        if (!res.ok) {
+          setProductTypeError(true);
+          return;
+        }
+        const data = await res.json();
+        if (res.status === 200) {
+          setProductTypes(data || []);
+        }
+      } catch (error) {
+        setProductTypeError(true);
+        console.error("Error fetching product types:", error);
+        toast.error("Failed to load designation list");
+      }
+    };
+
+    fetchProductTypes();
+  }, []);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter]);
 
   const handleChange = (field: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    setFormData((prev) => ({
+      ...prev,
+      [field]: field === "email" ? value.toLowerCase() : value,
+    }));
   };
   // 🚀 API CALL (Load all clients)
   const loadAllClients = async (role: String) => {
-    console.log(userDetails);
     try {
+      setBusyCursor(true);
       let response;
       if (role === "admin") {
-        response = await fetch(`http://localhost:8080/api/v1/client/loadAll`, {
+        response = await fetch(`${baseURL}client/loadAll`, {
           method: "GET",
         });
       } else {
         response = await fetch(
-          `http://localhost:8080/api/v1/client/registeredBy/${userDetails.username}`,
+          `${baseURL}client/registeredBy/${userDetails?.username}`,
           {
             method: "GET",
           }
         );
       }
       if (!response.ok) {
+        setBusyCursor(false);
         toast.error("Failed to load clients");
         return;
       }
 
-      const data = await response.json();
-      console.log("Loaded Clients:", data);
+      const data: Client[] = await response.json();
 
       setClients(data); // store in state
+      setBusyCursor(false);
     } catch (error) {
+      setBusyCursor(false);
       console.error("LoadAll API Error:", error);
       toast.error("Something went wrong while loading clients");
     }
@@ -130,6 +181,10 @@ export default function RegisteredClients() {
     setExpiryDate("");
   };
 
+  const threeMonthsLater = new Date();
+  threeMonthsLater.setMonth(threeMonthsLater.getMonth() + 3);
+  const maxDate = threeMonthsLater.toISOString().split("T")[0];
+
   // ---------- GENERATE LICENSE ----------
   const generateKey = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -141,7 +196,7 @@ export default function RegisteredClients() {
     // }
 
     try {
-      const response = await fetch("http://localhost:8080/api/v1/generateKey", {
+      const response = await fetch(`${baseURL}generateKey`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -155,8 +210,11 @@ export default function RegisteredClients() {
       });
 
       const result = await response.json();
-      console.log("Generate Key Response:", result);
       setGeneratedKey(result?.licenseKey);
+      if (!userDetails) {
+        toast.error("Enable to Load Clients Data");
+        return;
+      }
       loadAllClients(userDetails.role);
 
       toast.success("License key generated successfully!");
@@ -170,7 +228,7 @@ export default function RegisteredClients() {
     e.preventDefault();
 
     try {
-      const response = await fetch("http://localhost:8080/api/v1/client", {
+      const response = await fetch(`${baseURL}client`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -190,7 +248,7 @@ export default function RegisteredClients() {
         return;
       }
       setShowAddUser(false);
-      loadAllClients(userDetails.role);
+      loadAllClients(userDetails?.role || "");
       resetClients();
       toast.success("Client registered successfully!");
       setTimeout(() => navigate("/registered-clients"), 800);
@@ -213,8 +271,17 @@ export default function RegisteredClients() {
 
     return matchesSearch && matchesStatus;
   });
+  const itemsPerPage = 5;
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+
+  const paginatedClients = filteredClients.slice(
+    indexOfFirstItem,
+    indexOfLastItem
+  );
+
+  const totalPages = Math.ceil(filteredClients.length / itemsPerPage);
   const getStatusText = (value: string) => {
-    console.log("value", value);
     if (value === "Active") return "Active";
     if (value === "Expired") return "Expired";
     if (value === "Expiring Soon") return "Expiring Soon";
@@ -249,12 +316,12 @@ export default function RegisteredClients() {
             <div className="max-w-4xl mx-auto">
               <div className="flex justify-between items-center mb-6">
                 <div>
-                  <h1>Client Registration</h1>
-                  <p className="text-gray-500">Register a new client</p>
+                  <h1 className="font-bold">Client Registration</h1>
+                  {/* <p className="text-gray-500">Register a new client</p> */}
                 </div>
                 <Button
                   variant="outline"
-                  className="rounded-xl"
+                  className="rounded-xl bg-gray-200 hover:bg-gray-300"
                   onClick={() => {
                     setShowAddUser(false);
                     setGeneratedKey("");
@@ -305,7 +372,7 @@ export default function RegisteredClients() {
                       <Input
                         id="email"
                         type="email"
-                        placeholder="client@company.com"
+                        placeholder="Enter client email"
                         value={formData.email}
                         onChange={(e) => handleChange("email", e.target.value)}
                         className="h-14 rounded-xl border-gray-200"
@@ -330,20 +397,33 @@ export default function RegisteredClients() {
                   {/* Product Type Dropdown */}
                   <div className="space-y-3">
                     <Label>Product Type</Label>
+
                     <Select
                       value={formData.productType}
-                      onValueChange={(value) =>
+                      onValueChange={(value: string) =>
                         handleChange("productType", value)
                       }
                     >
                       <SelectTrigger className="h-14 rounded-xl border-gray-200">
                         <SelectValue placeholder="Select product type" />
                       </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="basic">Basic</SelectItem>
-                        <SelectItem value="pro">Pro</SelectItem>
-                        <SelectItem value="enterprise">Enterprise</SelectItem>
-                        <SelectItem value="custom">Custom</SelectItem>
+
+                      <SelectContent className="bg-white border-gray-300">
+                        {productTypeError ? (
+                          <SelectItem value="error" disabled>
+                            ❌ Failed to load product types
+                          </SelectItem>
+                        ) : productTypes.length > 0 ? (
+                          productTypes.map((type, index) => (
+                            <SelectItem key={index} value={type}>
+                              {type}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          <SelectItem value="loading" disabled>
+                            Loading...
+                          </SelectItem>
+                        )}
                       </SelectContent>
                     </Select>
                   </div>
@@ -399,7 +479,9 @@ export default function RegisteredClients() {
                         </div>
 
                         <Button
-                          onClick={copyToClipboard}
+                          onClick={() => {
+                            copyToClipboard(generatedKey);
+                          }}
                           className="h-14 px-6 bg-[#1E88E5]"
                         >
                           {copiedKey ? (
@@ -434,7 +516,7 @@ export default function RegisteredClients() {
                   </div>
                   <Button
                     variant="outline"
-                    className="rounded-xl"
+                    className="rounded-xl bg-gray-200 hover:bg-gray-300"
                     onClick={() => {
                       setShowLicenseForm(false);
                     }}
@@ -457,7 +539,7 @@ export default function RegisteredClients() {
                           <SelectValue placeholder="Select client email" />
                         </SelectTrigger>
 
-                        <SelectContent>
+                        <SelectContent className="bg-white border-gray-300">
                           {filteredLicense.length > 0 ? (
                             filteredLicense
                               // .filter((client) => client.licenseKey)
@@ -496,6 +578,8 @@ export default function RegisteredClients() {
                       <Input
                         type="date"
                         value={expiryDate}
+                        min={new Date().toISOString().split("T")[0]}
+                        max={maxDate}
                         onChange={(e) => setExpiryDate(e.target.value)}
                         className="h-14"
                         required
@@ -517,9 +601,9 @@ export default function RegisteredClients() {
             <main className="p-8">
               <div className="mb-8">
                 <h1>Registered Clients</h1>
-                <p className="text-gray-500">
+                {/* <p className="text-gray-500">
                   View and manage all registered clients
-                </p>
+                </p> */}
               </div>
 
               {/* Search + Filter */}
@@ -527,136 +611,201 @@ export default function RegisteredClients() {
                 <div className="relative w-full">
                   <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <Input
-                    placeholder="Search by name, company, status or email..."
+                    placeholder="Search by company, status or email..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="h-14 pl-12 rounded-xl border-gray-200 focus:border-[#4B9CD3]"
+                    className="h-12 pl-12 rounded-xl border-gray-200 focus:border-[#4B9CD3]"
                   />
                 </div>
+
                 <Button
-                  className="bg-[#1E88E5] hover:bg-[#1976D2] text-white h-14 px-6 rounded-xl"
+                  className="bg-[#1E88E5] hover:bg-[#1976D2] text-white h-12 rounded-xl"
                   onClick={() => setShowAddUser(true)}
                 >
-                  <Plus className="w-5 h-5 mr-2" />
-                  Add User
+                  <Plus className="w-5 h-5" />
+                  Add Client
                 </Button>
 
-                {/* <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-64 h-14 rounded-xl border-gray-200">
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="Expired">Expired</SelectItem>
-                  <SelectItem value="Unknown">Unknown</SelectItem>
-                </SelectContent>
-              </Select> */}
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-64 h-14 rounded-xl border-gray-200">
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-white">
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="Active">Active</SelectItem>
+                    <SelectItem value="InActive">In Active</SelectItem>
+                    <SelectItem value="Expired">Expired</SelectItem>
+                    <SelectItem value="Expiring Soon">Expiring Soon</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Table */}
-              <div className="bg-white rounded-[20px] shadow-sm overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-gray-100">
-                        <th className="text-left p-6 text-gray-600">
+              {busyCursor ? (
+                <ShimmerChartSkeleton table={true} />
+              ) : (
+                <div className="bg-white rounded-[20px] shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="border-b border-gray-100">
+                          {/* <th className="text-left p-6 text-gray-600">
                           Client Name
-                        </th>
-                        <th className="text-left p-6 text-gray-600">Company</th>
-                        <th className="text-left p-6 text-gray-600">Email</th>
-                        <th className="text-left p-6 text-gray-600">Phone</th>
-                        <th className="text-left p-6 text-gray-600">Product</th>
-                        <th className="text-left p-6 text-gray-600">
-                          Expiry Date
-                        </th>
-                        <th className="text-left p-6 text-gray-600">Status</th>
-                        <th className="text-left p-6 text-gray-600">
-                          License key
-                        </th>
-                      </tr>
-                    </thead>
+                        </th> */}
+                          <th className="text-left p-6 text-gray-600">Email</th>
 
-                    <tbody>
-                      {filteredClients.map((client: any, index: number) => (
-                        <tr
-                          key={index}
-                          className="border-b border-gray-50 hover:bg-gray-50 transition-colors"
-                        >
-                          <td className="p-6 text-gray-900">
-                            {capitalizeWords(client.clientName)}
-                          </td>
-                          <td className="p-6 text-gray-900">
-                            {capitalizeWords(client.companyName)}
-                          </td>
-                          <td className="p-6 text-gray-600">{client.email}</td>
-                          <td className="p-6 text-gray-600">{client.phone}</td>
-                          <td className="p-6 text-gray-600">
-                            {client.productType}
-                          </td>
-                          <td className="p-6 text-gray-900">
-                            {client.expDate || "—"}
-                          </td>
-                          <td className="p-6">
-                            {(() => {
-                              const statusText = getStatusText(client.status);
-                              return (
-                                <span
-                                  className={`px-4 py-2 rounded-xl text-sm ${getStatusClass(
-                                    statusText
-                                  )}`}
-                                >
-                                  {statusText}
-                                </span>
-                              );
-                            })()}
-                          </td>
-                          <td className="p-6">
-                            {client.licenseKey !== null ? (
-                              <Button
-                                onClick={() => {
-                                  copyToClipboard(client.licenseKey);
-                                }}
-                                className="bg-[#1E88E5]"
-                              >
-                                {copiedKey === client.licenseKey ? (
-                                  <>
-                                    <Check className="" /> Copied!
-                                  </>
-                                ) : (
-                                  <>
-                                    <Copy className="" /> Copy Key
-                                  </>
-                                )}
-                              </Button>
-                            ) : (
-                              <Button
-                                onClick={() => {
-                                  setGeneratedKey("");
-                                  setClientName("");
-                                  setClientEmail("");
-                                  setProduct("");
-                                  setExpiryDate("");
-                                  setShowLicenseForm(true);
-                                }}
-                                className="bg-[#1E88E5]"
-                              >
-                                Get License Key
-                              </Button>
-                            )}
-                          </td>
+                          <th className="text-left p-6 text-gray-600">
+                            Company
+                          </th>
+                          <th className="text-left p-6 text-gray-600">Phone</th>
+                          <th className="text-left p-6 text-gray-600">
+                            Product
+                          </th>
+                          <th className="text-left p-6 text-gray-600">
+                            Expiry Date
+                          </th>
+                          <th className="text-left p-6 text-gray-600">
+                            Status
+                          </th>
+                          <th className="text-left p-6 text-gray-600">
+                            License key
+                          </th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
 
-                {filteredClients.length === 0 && (
-                  <div className="p-12 text-center text-gray-500">
-                    No clients found matching your criteria
+                      <tbody>
+                        {paginatedClients.map((client: any, index: number) => (
+                          <tr
+                            key={index}
+                            className="border-b border-gray-50 hover:bg-gray-50 transition-colors"
+                          >
+                            {/* <td className="p-6 text-gray-900">
+                            {capitalizeWords(client.clientName)}
+                          </td> */}
+
+                            <td className="p-2 text-gray-600">
+                              {client.email}
+                            </td>
+                            <td className="p-2 text-gray-900">
+                              {capitalizeWords(client.companyName)}
+                            </td>
+                            <td className="p-2 text-gray-600">
+                              {client.phone}
+                            </td>
+                            <td className="p-2 text-gray-600">
+                              {client.productType}
+                            </td>
+                            <td className="p-2 text-gray-900">
+                              {client.expDate || "—"}
+                            </td>
+                            <td className="p-2">
+                              {(() => {
+                                const statusText = getStatusText(client.status);
+                                return (
+                                  <span
+                                    className={`px-4 py-2 rounded-xl text-sm ${getStatusClass(
+                                      statusText
+                                    )}`}
+                                  >
+                                    {statusText}
+                                  </span>
+                                );
+                              })()}
+                            </td>
+                            <td className="p-2">
+                              {client.licenseKey !== null ? (
+                                <Button
+                                  onClick={() => {
+                                    copyToClipboard(client.licenseKey);
+                                  }}
+                                  className="bg-[#1E88E5]"
+                                >
+                                  {copiedKey === client.licenseKey ? (
+                                    <>
+                                      <Check className="" /> Copied!
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="" /> Copy Key
+                                    </>
+                                  )}
+                                </Button>
+                              ) : (
+                                <Button
+                                  onClick={() => {
+                                    setGeneratedKey("");
+                                    setClientName("");
+                                    setClientEmail("");
+                                    setProduct("");
+                                    setExpiryDate("");
+                                    setShowLicenseForm(true);
+                                  }}
+                                  className="bg-green-600"
+                                >
+                                  Get License Key
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {filteredClients.length > 0 && (
+                      <div className="flex justify-center items-center gap-3 py-6">
+                        <button
+                          className="px-4 py-2 bg-gray-200 rounded-lg disabled:opacity-50"
+                          onClick={() => setCurrentPage((prev) => prev - 1)}
+                          disabled={currentPage === 1}
+                        >
+                          Prev
+                        </button>
+
+                        <span className="px-3 py-1 bg-gray-100 rounded-lg text-sm">
+                          Page {currentPage} of {totalPages}
+                        </span>
+
+                        <button
+                          className="px-4 py-2 bg-gray-200 rounded-lg disabled:opacity-50"
+                          onClick={() => setCurrentPage((prev) => prev + 1)}
+                          disabled={currentPage === totalPages}
+                        >
+                          Next
+                        </button>
+                      </div>
+                    )}
+
+                    {/* {clients.length > 0 && (
+                    <div className="flex justify-center items-center gap-2 mt-4">
+                      <button
+                        className="px-4 py-2 bg-gray-200 rounded-lg disabled:opacity-50"
+                        onClick={() => setCurrentPage((prev) => prev - 1)}
+                        disabled={currentPage === 1}
+                      >
+                        Prev
+                      </button>
+
+                      <span className="px-3 py-1 bg-gray-100 rounded-lg text-sm">
+                        Page {currentPage} of {totalPages}
+                      </span>
+
+                      <button
+                        className="px-4 py-2 bg-gray-200 rounded-lg disabled:opacity-50"
+                        onClick={() => setCurrentPage((prev) => prev + 1)}
+                        disabled={currentPage === totalPages}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  )} */}
                   </div>
-                )}
-              </div>
+
+                  {filteredClients.length === 0 && (
+                    <div className="p-12 text-center text-gray-500">
+                      No clients found matching your criteria
+                    </div>
+                  )}
+                </div>
+              )}
             </main>
           </div>
         )}

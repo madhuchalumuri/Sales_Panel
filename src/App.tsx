@@ -7,14 +7,10 @@ import {
 import { useState } from "react";
 import LoginPage from "./components/LoginPage";
 import Dashboard from "./components/Dashboard";
-import ClientRegistration from "./components/ClientRegistration";
 import RegisteredClients from "./components/RegisteredClients";
-import ClientDetails from "./components/ClientDetails";
-import LicenseKeyGenerator from "./components/LicenseKeyGenerator";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import SalesUsersList from "./components/SalesUsersList";
-import UserRegistration from "./components/UserRegistration";
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(
@@ -24,7 +20,7 @@ export default function App() {
   return (
     <>
       <ToastContainer position="top-right" autoClose={2000} />
-      <Router basename="/CloneTab">
+      <Router basename="/CloneTab/">
         <Routes>
           <Route
             path="/"
@@ -37,7 +33,7 @@ export default function App() {
             }
           />
           <Route
-            path="/dashboard"
+            path="/"
             element={isLoggedIn ? <Dashboard /> : <Navigate to="/" />}
           />
           <Route
@@ -45,25 +41,10 @@ export default function App() {
             element={isLoggedIn ? <SalesUsersList /> : <Navigate to="/" />}
           />
           <Route
-            path="/client-registration"
-            element={isLoggedIn ? <ClientRegistration /> : <Navigate to="/" />}
-          />
-          <Route
-            path="/user-registration"
-            element={isLoggedIn ? <UserRegistration /> : <Navigate to="/" />}
-          />
-          <Route
             path="/registered-clients"
             element={isLoggedIn ? <RegisteredClients /> : <Navigate to="/" />}
           />
-          {/* <Route
-            path="/client-details/:id"
-            element={isLoggedIn ? <ClientDetails /> : <Navigate to="/" />}
-          /> */}
-          <Route
-            path="/license-generator"
-            element={isLoggedIn ? <LicenseKeyGenerator /> : <Navigate to="/" />}
-          />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
     </>
