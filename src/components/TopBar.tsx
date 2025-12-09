@@ -242,7 +242,7 @@ export default function TopBar() {
         <div className="flex items-center gap-6">
           {userName?.role === "admin" && (
             <Button
-              className="bg-blue-500"
+              className="bg-blue-400"
               onClick={() => setForgotModal(true)}
             >
               Password management

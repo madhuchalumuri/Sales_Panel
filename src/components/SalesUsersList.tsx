@@ -291,7 +291,6 @@ export default function SalesUsersList() {
     //   toast.error("Email must end with @clonetab.com");
     //   return;
     // }
-    console.log("passwordError", passwordError);
     if (passwordError) {
       toast.error(passwordError);
       return;
@@ -330,15 +329,11 @@ export default function SalesUsersList() {
         message = text;
       }
 
-      console.log("FINAL MESSAGE:", message);
-
-      // ⚠️ Handle Status 208
       if (response.status === 208) {
         toast.error(message || "User already exists!");
         return;
       }
 
-      // ✅ Handle Success
       if (response.status === 200 || response.status === 201) {
         toast.success(editIndex ? "User updated!" : "User registered!");
         resetForm();
@@ -348,7 +343,6 @@ export default function SalesUsersList() {
         return;
       }
 
-      // ❌ Unexpected status
       toast.error(message || "Something went wrong!");
     } catch (error: any) {
       console.error("ERROR:", error);
