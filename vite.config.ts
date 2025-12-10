@@ -53,7 +53,7 @@ export default defineConfig({
   },
   build: {
     target: "esnext",
-    outDir: "CloneTab",
+    outDir: "SalesPortal",
   },
   server: {
     port: 3000,
