@@ -1,5 +1,5 @@
 
-  # Sales Team Panel UI Design
+  # Sales Team Panel UI Design - Frontend
 
   ## Running the code
 
