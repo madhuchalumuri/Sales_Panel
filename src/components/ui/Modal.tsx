@@ -9,7 +9,7 @@ interface ModalProps {
 
 const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
   if (!isOpen) return null;
-//remove
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[999]">
       <div className="bg-white rounded-2xl w-[30%] max-w-3xl p-6 shadow-xl animate-fadeIn">
